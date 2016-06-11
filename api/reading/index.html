@@ -332,20 +332,24 @@ aged under 13 years old:</p>
 <td>equals</td>
 </tr>
 <tr>
+<td>gte</td>
+<td>greater than or equal</td>
+</tr>
+<tr>
 <td>gt</td>
 <td>greater than</td>
+</tr>
+<tr>
+<td>lte</td>
+<td>less than or equal</td>
 </tr>
 <tr>
 <td>lt</td>
 <td>less than</td>
 </tr>
 <tr>
-<td>gte</td>
-<td>greater than or equal</td>
-</tr>
-<tr>
-<td>lte</td>
-<td>less than or equal</td>
+<td>neq</td>
+<td>not equal</td>
 </tr>
 <tr>
 <td>like</td>
@@ -356,16 +360,32 @@ aged under 13 years old:</p>
 <td>ILIKE operator (use * in place of %)</td>
 </tr>
 <tr>
-<td>@@</td>
-<td>full-text search using to_tsquery</td>
+<td>in</td>
+<td>one of a list of values e.g. <code>?a=in.1,2,3</code></td>
+</tr>
+<tr>
+<td>notin</td>
+<td>not one of a list of values e.g. <code>?a=notin.1,2,3</code></td>
 </tr>
 <tr>
 <td>is</td>
 <td>checking for exact equality (null,true,false)</td>
 </tr>
 <tr>
-<td>in</td>
-<td>one of a list of values e.g. <code>?a=in.1,2,3</code></td>
+<td>isnot</td>
+<td>checking for exact inequality (null,true,false)</td>
+</tr>
+<tr>
+<td>@@</td>
+<td>full-text search using to_tsquery</td>
+</tr>
+<tr>
+<td>@&gt;</td>
+<td>contains e.g. <code>?tags=@&gt;.{example, new}</code></td>
+</tr>
+<tr>
+<td>&lt;@</td>
+<td>contained in e.g. <code>values=&lt;@{1,2,3}</code></td>
 </tr>
 <tr>
 <td>not</td>
@@ -422,6 +442,10 @@ comma-separated list of columns and directions:</p>
 GET /people?order=age.desc.nullslast
 </code></pre>
 
+<p>To order the embedded items, you need to specify the tree path for the order param like so.</p>
+<pre><code class="HTTP">GET /projects?select=id,name,tasks{id,name}&amp;order=id.asc&amp;tasks.order=name.asc
+</code></pre>
+
 <p>You can also use <a href="http://www.postgresql.org/docs/current/interactive/xfunc-sql.html#XFUNC-SQL-COMPOSITE-FUNCTIONS">computed
 columns</a>
 to order the results, even though the computed
@@ -449,6 +473,13 @@ Range: 0-4
 
 <p>You can also use open-ended ranges for an offset with no limit:
 <code>Range: 10-</code>.</p>
+<p>In addition to the <code>Range</code> header, you can use <code>&amp;limit</code> and <code>&amp;offset</code> parameters
+to achieve the same result.</p>
+<p>You can also set a limit (but not offset) for the embedded items like so</p>
+<pre><code class="HTTP">/posts?select=id,title,body,comments{id,email,body}&amp;limit=10&amp;comments.limit=3
+</code></pre>
+
+<p>The above request will return the first 10 posts and for each of the posts, 3 comments at most</p>
 <h4 id="suppressing-counts">Suppressing Counts</h4>
 <p>Sometimes knowing the total row count of a query is unnecessary and
 only adds extra cost to the database query. So you can skip the
@@ -485,7 +516,8 @@ but the the select query is recursive. You could for instance specify</p>
 <pre><code class="HTTP">GET /foo?select=x, y, bar{z, w, baz{*}}
 </code></pre>
 
-<p>You can select not only using table names, but also column names!
+<p>You can select not only using table names, but also foreign key column names!
+This is especially needed when you have a table with two foreign keys pointing to the same table, for example billing_address_id and shipping_address_id.
 To embed the same foreign key row from our client example earlier
 you could do the following:</p>
 <pre><code class="HTTP">GET /projects?id=eq.1&amp;select=id, name, client_id{*}
@@ -494,8 +526,7 @@ you could do the following:</p>
 <p>In the response there will be a <code>client_id</code> object containing all
 the data for that row.</p>
 <p>However, a <code>client_id</code> object doesn't make a lot of sense, so you
-could do one of two things. Create a view which renames <code>client_id</code>
-to just <code>client</code> (this is the hard way), or just try <code>client{*}</code>
+could do one of two things. Tell PostgREST that you want the key renamed by using the <code>alias</code> feature like so <code>client:client_id{*}</code>, or just try <code>client{*}</code>
 in the select parameter! PostgREST supports smart ducktype checking
 for common foreign key names, so if your column name ends with
 <code>_id</code>, <code>_fk</code>, or any variation of the two (including camelcase)
@@ -505,6 +536,27 @@ you can embed a row with just the name's beginning.</p>
 </code></pre>
 
 <p>Would embed in the <code>client</code> key the row referenced with <code>client_id</code>.</p>
+<p>The <code>alias</code> feature works for embedded entities and also for regular columns. This is useful in situations where for example you use different naming conventions in the database and frontend.</p>
+<p>The following request will produce the output below:</p>
+<pre><code class="HTTP">GET /orders?id=eq.1&amp;select=orderId:id, customer:customer_id{customerId:id, customerName:name}
+</code></pre>
+
+<pre><code class="json">[
+  {
+    &quot;orderId&quot;: 1,
+    &quot;customer&quot;: {
+      &quot;customerId&quot;: 1,
+      &quot;customerName&quot;: &quot;John Smith&quot;
+    }
+  }
+]
+</code></pre>
+
+<p>If you want to apply filters to the embedded items, you can do that like so:</p>
+<pre><code class="HTTP">GET /clients?id=eq.42&amp;select=id,name,projects{id,name,is_active}&amp;projects.is_active=eq.true
+</code></pre>
+
+<p>The above request will return the client with id=42 and all the projects for that client that are still active</p>
 <div class="admonition note">
     <p class="admonition-title">Design Consideration</p>
     <p>In order for this feature to work as expected after a schema change, PostgREST currently requires to be restarted.</p>
